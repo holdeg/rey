@@ -4,7 +4,8 @@ use ndarray::{arr1, Array1};
 use roots::{find_roots_quadratic, Roots};
 
 type DirectionVector = Array1<f64>;
-type Coordinate = Array1<f64>;
+type WorldCoordinate = Array1<f64>;
+type TextureCoordinate = Array1<f64>;
 type RGB = Array1<f64>;
 
 trait Normalize {
@@ -21,18 +22,31 @@ impl Normalize for DirectionVector {
     }
 }
 
+trait Mix {
+    fn mix(&self, other: &Self, ratio: f64) -> Self;
+}
+
+impl Mix for RGB {
+    fn mix(&self, other: &Self, ratio: f64) -> Self {
+        return self * (1. - ratio) + other * ratio;
+    }
+}
+
 struct Ray {
-    origin: Coordinate,
+    origin: WorldCoordinate,
     direction: DirectionVector,
 }
 
 trait Interactable {
     fn intersect(&self, ray: &Ray) -> Option<f64>;
+    fn surface_data(&self, point_hit: WorldCoordinate) -> (DirectionVector, TextureCoordinate);
+    fn colour(&self) -> &RGB;
 }
 
 struct Sphere {
-    centre: Coordinate,
+    centre: WorldCoordinate,
     radius: f64,
+    base_colour: RGB,
 }
 
 impl Interactable for Sphere {
@@ -66,6 +80,19 @@ impl Interactable for Sphere {
             }
             _ => unreachable!("Can't have more than two roots to a quadratic equation"),
         };
+    }
+
+    fn surface_data(&self, point_hit: WorldCoordinate) -> (DirectionVector, TextureCoordinate) {
+        let normal = (point_hit - &self.centre).normalize();
+        let tex = arr1(&[
+            0.5 * (1. + &normal[2].atan2(normal[0])) / PI,
+            &normal[1].acos() / PI,
+        ]);
+        (normal, tex)
+    }
+
+    fn colour(&self) -> &RGB {
+        &self.base_colour
     }
 }
 
@@ -120,12 +147,15 @@ impl RayTraceRenderer {
     fn cast_ray(&self, ray: Ray, scene: &Scene, recursion_depth: u8) -> RGB {
         match self.trace(&ray, scene) {
             Some((t, object)) => {
-                // do some think
-                let point_hit: Coordinate = ray.origin + ray.direction * t;
-                let normal: DirectionVector;
-                // what is tex;
+                let point_hit: WorldCoordinate = ray.origin + &ray.direction * t;
+                let (normal, tex) = object.surface_data(point_hit);
+                let scale = 4.;
+                let pattern = ((tex[0] * scale) % 1. > 0.5) ^ ((tex[1] * scale) % 1. > 0.5);
 
-                arr1(&[0., 0., 0.])
+                normal.dot(&(-1. * ray.direction))
+                    * &object
+                        .colour()
+                        .mix(&(object.colour() * 0.8), pattern as u8 as f64)
             }
             None => arr1(&[0., 0., 0.]),
         }
@@ -137,7 +167,7 @@ impl RayTraceRenderer {
         let width_f64 = f64::from(self.options.width);
         let height_f64 = f64::from(self.options.height);
 
-        let scale: f64 = (self.options.field_of_view * PI / 180.).tan();
+        let scale: f64 = (self.options.field_of_view * PI / 360.).tan();
         let aspect_ratio: f64 = width_f64 / height_f64;
 
         // let mut rng = rand::thread_rng();
@@ -199,7 +229,14 @@ impl RayTraceRenderer {
 
 fn main() {
     // set up stage
-    let stage = Scene::default();
+    let mut objects: Vec<Box<dyn Interactable>> = Vec::new();
+    objects.push(Box::new(Sphere {
+        centre: arr1(&[0., 0., -5.]),
+        radius: 1.,
+        base_colour: arr1(&[1., 0., 0.]),
+    }));
+    let stage = Scene { objects };
+    // let stage = Scene::default();
     // set up options
     let options = RenderOptions::default();
 
