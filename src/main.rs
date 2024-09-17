@@ -88,7 +88,12 @@ impl RayTraceRenderer {
 
                 let ray_direction: Direction = [x, y, -1.].normalize();
                 // framebuffer.push(self.cast_ray(ray_direction));
-                framebuffer.push([rng.gen(), rng.gen(), rng.gen()]);
+                // framebuffer.push([rng.gen(), rng.gen(), rng.gen()]);
+                framebuffer.push([
+                    1. - (f64::from(i) / width_f64),
+                    f64::from(i) / width_f64,
+                    f64::from(j) / height_f64,
+                ]);
             }
         }
         let mut f = File::create("out.ppm").expect("Unable to create file");
