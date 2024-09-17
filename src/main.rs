@@ -1,6 +1,7 @@
 use std::{f64::consts::PI, fs::File, io::Write};
 
 use ndarray::{arr1, Array1};
+use rand::Rng;
 use roots::{find_roots_quadratic, Roots};
 
 type DirectionVector = Array1<f64>;
@@ -228,17 +229,31 @@ impl RayTraceRenderer {
 }
 
 fn main() {
+    let mut rng = rand::thread_rng();
+
     // set up stage
     let mut objects: Vec<Box<dyn Interactable>> = Vec::new();
-    objects.push(Box::new(Sphere {
-        centre: arr1(&[0., 0., -5.]),
-        radius: 1.,
-        base_colour: arr1(&[1., 0., 0.]),
-    }));
+
+    for _ in 0..32 {
+        // 32 spheres :)
+        objects.push(Box::new(Sphere {
+            centre: arr1(&[
+                5. - 10. * rng.gen::<f64>(),
+                5. - 10. * rng.gen::<f64>(),
+                -5. - 10. * rng.gen::<f64>(),
+            ]),
+            radius: 0.5 + 0.5 * rng.gen::<f64>(),
+            base_colour: arr1(&[rng.gen(), rng.gen(), rng.gen()]),
+        }));
+    }
     let stage = Scene { objects };
-    // let stage = Scene::default();
     // set up options
-    let options = RenderOptions::default();
+    // let options = RenderOptions::default();
+    let options = RenderOptions {
+        width: 1600,
+        height: 1600,
+        field_of_view: 51.52,
+    };
 
     // render
     let raytracer = RayTraceRenderer::new(options);
