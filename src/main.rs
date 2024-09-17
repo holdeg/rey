@@ -1,25 +1,20 @@
-use rand::Rng;
 use std::{f64::consts::PI, fs::File, io::Write};
+
+use ndarray::{arr1, Array1};
 
 struct Scene {}
 
-type RGB = [f64; 3];
-
-type Direction = [f64; 3];
+type FloatVector = Array1<f64>;
 
 trait Normalize {
     fn normalize(self) -> Self;
 }
 
-impl Normalize for Direction {
+impl Normalize for FloatVector {
     fn normalize(self) -> Self {
-        let magnitude = (self[0].powi(2) + self[1].powi(2) + self[2].powi(2)).sqrt();
+        let magnitude = self.dot(&self).sqrt();
         if magnitude > 0. {
-            return [
-                self[0] / magnitude,
-                self[1] / magnitude,
-                self[2] / magnitude,
-            ];
+            return self / magnitude;
         }
         self
     }
@@ -51,6 +46,10 @@ impl RayTraceRenderer {
         RayTraceRenderer { options }
     }
 
+    fn cast_ray(&self, direction: FloatVector, recursion_depth: u8) -> FloatVector {
+        0.5 * direction + 0.5
+    }
+
     fn render(&self, scene: Scene) {
         println!("Rendering image with options: {:?}", self.options);
 
@@ -60,11 +59,10 @@ impl RayTraceRenderer {
         let scale: f64 = (self.options.field_of_view * PI / 180.).tan();
         let aspect_ratio: f64 = width_f64 / height_f64;
 
-        // Temporary
-        let mut rng = rand::thread_rng();
+        // let mut rng = rand::thread_rng();
 
         // Cast rays per pixel.
-        let mut framebuffer: Vec<RGB> = Vec::new();
+        let mut framebuffer: Vec<Array1<f64>> = Vec::new();
         for j in 0..self.options.height {
             for i in 0..self.options.width {
                 // Translate from pixel coordinates to world coordinate system.
@@ -86,9 +84,9 @@ impl RayTraceRenderer {
                 x *= aspect_ratio * scale;
                 y *= scale;
 
-                let ray_direction: Direction = [x, y, -1.].normalize();
-                // framebuffer.push(self.cast_ray(ray_direction));
-                framebuffer.push([rng.gen(), rng.gen(), rng.gen()]);
+                let ray_direction: FloatVector = arr1(&[x, y, -1.]).normalize();
+                framebuffer.push(self.cast_ray(ray_direction, 0));
+                // framebuffer.push([rng.gen(), rng.gen(), rng.gen()]);
             }
         }
         let mut f = File::create("out.ppm").expect("Unable to create file");
@@ -102,9 +100,10 @@ impl RayTraceRenderer {
         // }
         framebuffer.into_iter().for_each(|rgb| {
             f.write_all(
-                &rgb.iter()
-                    .map(|channel| (channel.max(0.).min(1.) * 255.).round() as u8)
-                    .collect::<Vec<u8>>(),
+                &(rgb.clamp(0., 1.) * 255.)
+                    .iter()
+                    .map(|channel| channel.round() as u8)
+                    .collect::<Vec<_>>(),
             )
             .expect("Unable to write data");
         });
