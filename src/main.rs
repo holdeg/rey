@@ -1,16 +1,17 @@
 use std::{f64::consts::PI, fs::File, io::Write};
 
 use ndarray::{arr1, Array1};
+use roots::{find_roots_quadratic, Roots};
 
-struct Scene {}
-
-type FloatVector = Array1<f64>;
+type DirectionVector = Array1<f64>;
+type Coordinate = Array1<f64>;
+type RGB = Array1<f64>;
 
 trait Normalize {
     fn normalize(self) -> Self;
 }
 
-impl Normalize for FloatVector {
+impl Normalize for DirectionVector {
     fn normalize(self) -> Self {
         let magnitude = self.dot(&self).sqrt();
         if magnitude > 0. {
@@ -18,6 +19,59 @@ impl Normalize for FloatVector {
         }
         self
     }
+}
+
+struct Ray {
+    origin: Coordinate,
+    direction: DirectionVector,
+}
+
+trait Interactable {
+    fn intersect(&self, ray: &Ray) -> Option<f64>;
+}
+
+struct Sphere {
+    centre: Coordinate,
+    radius: f64,
+}
+
+impl Interactable for Sphere {
+    fn intersect(&self, ray: &Ray) -> Option<f64> {
+        // Solve analytically.
+
+        let hypotenuse: DirectionVector = &ray.origin - &self.centre;
+        let a2 = ray.direction.dot(&ray.direction);
+        let a1 = 2. * ray.direction.dot(&hypotenuse);
+        let a0 = hypotenuse.dot(&hypotenuse) - &self.radius.powi(2);
+
+        return match find_roots_quadratic(a2, a1, a0) {
+            Roots::No(_) => None,
+            Roots::One([root]) => {
+                if root >= 0. {
+                    Some(root)
+                } else {
+                    None
+                }
+            }
+            Roots::Two([t0, t1]) => {
+                // t0 is guaranteed to be less than t1.
+                // We want to return the closest point of intersection.
+                if t0 >= 0. {
+                    Some(t0)
+                } else if t1 >= 0. {
+                    Some(t1)
+                } else {
+                    None
+                }
+            }
+            _ => unreachable!("Can't have more than two roots to a quadratic equation"),
+        };
+    }
+}
+
+#[derive(Default)]
+struct Scene {
+    objects: Vec<Box<dyn Interactable>>,
 }
 
 #[derive(Debug)]
@@ -46,8 +100,35 @@ impl RayTraceRenderer {
         RayTraceRenderer { options }
     }
 
-    fn cast_ray(&self, direction: FloatVector, recursion_depth: u8) -> FloatVector {
-        0.5 * direction + 0.5
+    fn trace<'a>(&'a self, ray: &Ray, scene: &'a Scene) -> Option<(f64, &Box<dyn Interactable>)> {
+        let mut nearest_t = f64::MAX;
+        let mut pair = None;
+        scene.objects.iter().for_each(|object| {
+            match object.intersect(ray) {
+                Some(t) => {
+                    if t < nearest_t {
+                        nearest_t = t;
+                    };
+                    pair = Some((t, object));
+                }
+                None => {}
+            };
+        });
+        pair
+    }
+
+    fn cast_ray(&self, ray: Ray, scene: &Scene, recursion_depth: u8) -> RGB {
+        match self.trace(&ray, scene) {
+            Some((t, object)) => {
+                // do some think
+                let point_hit: Coordinate = ray.origin + ray.direction * t;
+                let normal: DirectionVector;
+                // what is tex;
+
+                arr1(&[0., 0., 0.])
+            }
+            None => arr1(&[0., 0., 0.]),
+        }
     }
 
     fn render(&self, scene: Scene) {
@@ -84,8 +165,12 @@ impl RayTraceRenderer {
                 x *= aspect_ratio * scale;
                 y *= scale;
 
-                let ray_direction: FloatVector = arr1(&[x, y, -1.]).normalize();
-                framebuffer.push(self.cast_ray(ray_direction, 0));
+                let ray_direction: DirectionVector = arr1(&[x, y, -1.]).normalize();
+                let ray = Ray {
+                    origin: arr1(&[0., 0., 0.]),
+                    direction: ray_direction,
+                };
+                framebuffer.push(self.cast_ray(ray, &scene, 0));
                 // framebuffer.push([rng.gen(), rng.gen(), rng.gen()]);
             }
         }
@@ -114,7 +199,7 @@ impl RayTraceRenderer {
 
 fn main() {
     // set up stage
-    let stage = Scene {};
+    let stage = Scene::default();
     // set up options
     let options = RenderOptions::default();
 
