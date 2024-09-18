@@ -7,7 +7,7 @@ use roots::{find_roots_quadratic, Roots};
 type DirectionVector = Array1<f64>;
 type WorldCoordinate = Array1<f64>;
 type TextureCoordinate = Array1<f64>;
-type RGB = Array1<f64>;
+type Rgb = Array1<f64>;
 
 trait Normalize {
     fn normalize(self) -> Self;
@@ -27,9 +27,9 @@ trait Mix {
     fn mix(&self, other: &Self, ratio: f64) -> Self;
 }
 
-impl Mix for RGB {
+impl Mix for Rgb {
     fn mix(&self, other: &Self, ratio: f64) -> Self {
-        return self * (1. - ratio) + other * ratio;
+        self * (1. - ratio) + other * ratio
     }
 }
 
@@ -41,13 +41,13 @@ struct Ray {
 trait Interactable {
     fn intersect(&self, ray: &Ray) -> Option<f64>;
     fn surface_data(&self, point_hit: WorldCoordinate) -> (DirectionVector, TextureCoordinate);
-    fn colour(&self) -> &RGB;
+    fn colour(&self) -> &Rgb;
 }
 
 struct Sphere {
     centre: WorldCoordinate,
     radius: f64,
-    base_colour: RGB,
+    base_colour: Rgb,
 }
 
 impl Interactable for Sphere {
@@ -57,9 +57,9 @@ impl Interactable for Sphere {
         let hypotenuse: DirectionVector = &ray.origin - &self.centre;
         let a2 = ray.direction.dot(&ray.direction);
         let a1 = 2. * ray.direction.dot(&hypotenuse);
-        let a0 = hypotenuse.dot(&hypotenuse) - &self.radius.powi(2);
+        let a0 = hypotenuse.dot(&hypotenuse) - self.radius.powi(2);
 
-        return match find_roots_quadratic(a2, a1, a0) {
+        match find_roots_quadratic(a2, a1, a0) {
             Roots::No(_) => None,
             Roots::One([root]) => {
                 if root >= 0. {
@@ -80,19 +80,19 @@ impl Interactable for Sphere {
                 }
             }
             _ => unreachable!("Can't have more than two roots to a quadratic equation"),
-        };
+        }
     }
 
     fn surface_data(&self, point_hit: WorldCoordinate) -> (DirectionVector, TextureCoordinate) {
         let normal = (point_hit - &self.centre).normalize();
         let tex = arr1(&[
-            0.5 * (1. + &normal[2].atan2(normal[0])) / PI,
-            &normal[1].acos() / PI,
+            0.5 * (1. + normal[2].atan2(normal[0])) / PI,
+            normal[1].acos() / PI,
         ]);
         (normal, tex)
     }
 
-    fn colour(&self) -> &RGB {
+    fn colour(&self) -> &Rgb {
         &self.base_colour
     }
 }
@@ -100,7 +100,7 @@ impl Interactable for Sphere {
 struct Plane {
     normal: DirectionVector,
     point: WorldCoordinate,
-    base_colour: RGB,
+    base_colour: Rgb,
 }
 
 impl Interactable for Plane {
@@ -120,7 +120,7 @@ impl Interactable for Plane {
         todo!()
     }
 
-    fn colour(&self) -> &RGB {
+    fn colour(&self) -> &Rgb {
         &self.base_colour
     }
 }
@@ -160,20 +160,17 @@ impl RayTraceRenderer {
         let mut nearest_t = f64::MAX;
         let mut pair = None;
         scene.objects.iter().for_each(|object| {
-            match object.intersect(ray) {
-                Some(t) => {
-                    if t < nearest_t {
-                        nearest_t = t;
-                    };
-                    pair = Some((t, object));
-                }
-                None => {}
+            if let Some(t) = object.intersect(ray) {
+                if t < nearest_t {
+                    nearest_t = t;
+                };
+                pair = Some((t, object));
             };
         });
         pair
     }
 
-    fn cast_ray(&self, ray: Ray, scene: &Scene, recursion_depth: u8) -> RGB {
+    fn cast_ray(&self, ray: Ray, scene: &Scene, recursion_depth: u8) -> Rgb {
         match self.trace(&ray, scene) {
             Some((t, object)) => {
                 let point_hit: WorldCoordinate = ray.origin + &ray.direction * t;
@@ -199,8 +196,6 @@ impl RayTraceRenderer {
         let scale: f64 = (self.options.field_of_view * PI / 360.).tan();
         let aspect_ratio: f64 = width_f64 / height_f64;
 
-        // let mut rng = rand::thread_rng();
-
         // Cast rays per pixel.
         let mut framebuffer: Vec<Array1<f64>> = Vec::new();
         for j in 0..self.options.height {
@@ -213,8 +208,8 @@ impl RayTraceRenderer {
 
                 // Translate into NDC space (Normalized Device Coordinates)
                 // 0 <= x, y < 1
-                x = x / width_f64;
-                y = y / height_f64;
+                x /= width_f64;
+                y /= height_f64;
 
                 // Centre around the origin. Flip y-axis, since pixels start at the _top_ left.
                 x = 2. * x - 1.;
@@ -230,18 +225,13 @@ impl RayTraceRenderer {
                     direction: ray_direction,
                 };
                 framebuffer.push(self.cast_ray(ray, &scene, 0));
-                // framebuffer.push([rng.gen(), rng.gen(), rng.gen()]);
             }
         }
         let mut f = File::create("out.ppm").expect("Unable to create file");
-        f.write(format!("P6\n{} {}\n255\n", self.options.width, self.options.height).as_bytes())
-            .expect("Unable to write data");
-        // for (uint32_t i = 0; i < options.height * options.width; ++i) {
-        //     char r = (char)(255 * clamp(0, 1, framebuffer[i].x));
-        //     char g = (char)(255 * clamp(0, 1, framebuffer[i].y));
-        //     char b = (char)(255 * clamp(0, 1, framebuffer[i].z));
-        //     ofs << r << g << b;
-        // }
+        f.write_all(
+            format!("P6\n{} {}\n255\n", self.options.width, self.options.height).as_bytes(),
+        )
+        .expect("Unable to write data");
         framebuffer.into_iter().for_each(|rgb| {
             f.write_all(
                 &(rgb.clamp(0., 1.) * 255.)
@@ -251,8 +241,6 @@ impl RayTraceRenderer {
             )
             .expect("Unable to write data");
         });
-        // f.write_all(framebuffer.into_iter()..as_bytes())
-        // .expect("Unable to write data");
     }
 }
 
