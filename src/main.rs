@@ -97,6 +97,34 @@ impl Interactable for Sphere {
     }
 }
 
+struct Plane {
+    normal: DirectionVector,
+    point: WorldCoordinate,
+    base_colour: RGB,
+}
+
+impl Interactable for Plane {
+    fn intersect(&self, ray: &Ray) -> Option<f64> {
+        let denominator = self.normal.dot(&ray.direction);
+        if denominator.abs() > 1e-6 {
+            let root = (&self.point - &ray.origin).dot(&self.normal) / denominator;
+            if root >= 0. {
+                return Some(root);
+            }
+        }
+
+        None
+    }
+
+    fn surface_data(&self, point_hit: WorldCoordinate) -> (DirectionVector, TextureCoordinate) {
+        todo!()
+    }
+
+    fn colour(&self) -> &RGB {
+        &self.base_colour
+    }
+}
+
 #[derive(Default)]
 struct Scene {
     objects: Vec<Box<dyn Interactable>>,
