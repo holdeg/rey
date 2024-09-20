@@ -42,6 +42,9 @@ trait Interactable {
     fn intersect(&self, ray: &Ray) -> Option<f64>;
     fn surface_data(&self, point_hit: WorldCoordinate) -> (DirectionVector, TextureCoordinate);
     fn colour(&self) -> &Rgb;
+    fn albedo(&self) -> f64 {
+        0.18
+    }
 }
 
 struct Sphere {
@@ -125,9 +128,16 @@ impl Interactable for Plane {
     }
 }
 
-#[derive(Default)]
+struct DistantLight {
+    intensity: f64,
+    colour: Rgb,
+    direction: DirectionVector,
+}
+
+// #[derive(Default)]
 struct Scene {
     objects: Vec<Box<dyn Interactable>>,
+    light: DistantLight,
 }
 
 #[derive(Debug)]
@@ -135,6 +145,7 @@ struct RenderOptions {
     width: u32,
     height: u32,
     field_of_view: f64,
+    shadow_bias: f64,
 }
 
 impl Default for RenderOptions {
@@ -143,6 +154,7 @@ impl Default for RenderOptions {
             width: 800,
             height: 600,
             field_of_view: 90.,
+            shadow_bias: 1e-4,
         }
     }
 }
@@ -156,14 +168,14 @@ impl RayTraceRenderer {
         RayTraceRenderer { options }
     }
 
-    fn trace<'a>(&'a self, ray: &Ray, scene: &'a Scene) -> Option<(f64, &Box<dyn Interactable>)> {
+    fn trace<'a>(&'a self, ray: &Ray, scene: &'a Scene) -> Option<(f64, &'a dyn Interactable)> {
         let mut nearest_t = f64::MAX;
         let mut pair = None;
         scene.objects.iter().for_each(|object| {
             if let Some(t) = object.intersect(ray) {
                 if t < nearest_t {
                     nearest_t = t;
-                    pair = Some((t, object));
+                    pair = Some((t, &**object));
                 };
             };
         });
@@ -174,14 +186,33 @@ impl RayTraceRenderer {
         match self.trace(&ray, scene) {
             Some((t, object)) => {
                 let point_hit: WorldCoordinate = ray.origin + ray.direction * t;
-                let (normal, tex) = object.surface_data(point_hit);
-                let scale = 4.;
-                let pattern = ((tex[0] * scale) % 1. > 0.5) ^ ((tex[1] * scale) % 1. > 0.5);
+                let (normal, _tex) = object.surface_data(point_hit);
 
-                normal.dot(-1. * ray.direction)
-                    * object
-                        .colour()
-                        .mix(&(object.colour() * 0.8), pattern as u8 as f64)
+                let light_vector = -scene.light.direction;
+                // compute the color of a diffuse surface illuminated
+                // by a single distant light source.
+
+                let shadow_ray = Ray {
+                    origin: point_hit + normal * self.options.shadow_bias,
+                    direction: light_vector,
+                };
+                match self.trace(&shadow_ray, scene) {
+                    Some(_) => Rgb::new(0., 0., 0.),
+                    None => {
+                        object.albedo() / PI
+                            * scene.light.intensity
+                            * scene.light.colour
+                            * normal.dot(light_vector).max(0.)
+                    }
+                }
+
+                // let scale = 4.;
+                // let pattern = ((tex[0] * scale) % 1. > 0.5) ^ ((tex[1] * scale) % 1. > 0.5);
+
+                // normal.dot(-1. * ray.direction)
+                //     * object
+                //         .colour()
+                //         .mix(&(object.colour() * 0.8), pattern as u8 as f64)
             }
             None => Rgb::new(0., 0.4, 0.8),
         }
@@ -252,19 +283,37 @@ fn main() {
             centre: WorldCoordinate::new(
                 5. - 10. * rng.gen::<f64>(),
                 5. - 10. * rng.gen::<f64>(),
-                -5. - 10. * rng.gen::<f64>(),
+                -10. - 10. * rng.gen::<f64>(),
             ),
             radius: 0.5 + 0.5 * rng.gen::<f64>(),
             base_colour: Rgb::new(rng.gen(), rng.gen(), rng.gen()),
         }));
     }
-    let stage = Scene { objects };
+    // objects.push(Box::new(Sphere {
+    //     centre: WorldCoordinate::new(-1., -1., -5.),
+    //     radius: 1.,
+    //     base_colour: Rgb::new(rng.gen(), rng.gen(), rng.gen()),
+    // }));
+    // objects.push(Box::new(Sphere {
+    //     centre: WorldCoordinate::new(1., 1., -3.6),
+    //     radius: 0.5,
+    //     base_colour: Rgb::new(rng.gen(), rng.gen(), rng.gen()),
+    // }));
+    let stage = Scene {
+        objects,
+        light: DistantLight {
+            intensity: 10.,
+            colour: Rgb::new(1., 0., 0.),
+            direction: DirectionVector::new(-1., -1., -0.5).normalize(),
+        },
+    };
     // set up options
     // let options = RenderOptions::default();
     let options = RenderOptions {
         width: 1600,
         height: 1600,
         field_of_view: 51.52,
+        shadow_bias: 1e-4,
     };
 
     // render
