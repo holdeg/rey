@@ -1,5 +1,6 @@
 use std::{f64::consts::PI, fs::File, io::Write};
 
+use nalgebra::Matrix1x3;
 use ndarray::{arr1, Array1};
 use rand::Rng;
 use roots::{find_roots_quadratic, Roots};
@@ -20,6 +21,20 @@ impl Normalize for DirectionVector {
             return self / magnitude;
         }
         self
+    }
+}
+
+trait Cross {
+    fn cross(&self, other: &Self) -> Self;
+}
+
+impl Cross for DirectionVector {
+    fn cross(&self, other: &Self) -> Self {
+        arr1(&[
+            self[1] * other[2] - self[2] * other[1],
+            self[2] * other[0] - self[0] * other[2],
+            self[0] * other[1] - self[1] * other[0],
+        ])
     }
 }
 
@@ -117,11 +132,76 @@ impl Interactable for Plane {
     }
 
     fn surface_data(&self, point_hit: WorldCoordinate) -> (DirectionVector, TextureCoordinate) {
-        todo!()
+        (self.normal.clone(), arr1(&[0., 0.]))
     }
 
     fn colour(&self) -> &Rgb {
         &self.base_colour
+    }
+}
+
+struct Disc {
+    normal: DirectionVector,
+    point: WorldCoordinate,
+    radius: f64,
+    base_colour: Rgb,
+}
+
+impl Interactable for Disc {
+    fn intersect(&self, ray: &Ray) -> Option<f64> {
+        let denominator = self.normal.dot(&ray.direction);
+        if denominator.abs() > 1e-6 {
+            let root = (&self.point - &ray.origin).dot(&self.normal) / denominator;
+            if root >= 0. {
+                let point_hit = &ray.origin + &ray.direction * root;
+                if (&point_hit - &self.point).dot(&(&point_hit - &self.point))
+                    <= self.radius.powi(2)
+                {
+                    return Some(root);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn surface_data(&self, point_hit: WorldCoordinate) -> (DirectionVector, TextureCoordinate) {
+        (self.normal.clone(), arr1(&[0., 0.]))
+    }
+
+    fn colour(&self) -> &Rgb {
+        &self.base_colour
+    }
+}
+
+struct Triangle {
+    a: WorldCoordinate,
+    b: WorldCoordinate,
+    c: WorldCoordinate,
+    base_colour: Rgb,
+}
+
+impl Interactable for Triangle {
+    fn intersect(&self, ray: &Ray) -> Option<f64> {
+        let ab = &self.b - &self.a;
+        let ac = &self.c - &self.a;
+        let pvec = &ray.direction.cross(&ac);
+        let determinant = ab.dot(pvec);
+        if determinant < 1e-6 {
+            return None;
+        }
+        let determinant_reciprocal = 1. / determinant;
+        let tvec = &ray.origin - &self.a;
+        let u = tvec.dot(pvec) * determinant_reciprocal;
+        None
+    }
+
+    fn surface_data(&self, point_hit: WorldCoordinate) -> (DirectionVector, TextureCoordinate) {
+        todo!()
+    }
+
+    fn colour(&self) -> &Rgb {
+        todo!()
     }
 }
 
@@ -262,6 +342,12 @@ fn main() {
             base_colour: arr1(&[rng.gen(), rng.gen(), rng.gen()]),
         }));
     }
+    objects.push(Box::new(Disc {
+        normal: arr1(&[0., 1., 0.25]).normalize(),
+        point: arr1(&[0., -5., -30.]),
+        radius: 5.,
+        base_colour: arr1(&[0.5, 0.0, 0.5]),
+    }));
     let stage = Scene { objects };
     // set up options
     // let options = RenderOptions::default();
