@@ -163,8 +163,8 @@ impl RayTraceRenderer {
             if let Some(t) = object.intersect(ray) {
                 if t < nearest_t {
                     nearest_t = t;
+                    pair = Some((t, object));
                 };
-                pair = Some((t, object));
             };
         });
         pair
