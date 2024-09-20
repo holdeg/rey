@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ndarray = "0.16.1"
+cgmath = { version = "0.18.0", features = ["swizzle"] }
 rand = "0.8.5"
 roots = "0.0.8"
